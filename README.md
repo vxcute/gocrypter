@@ -2,8 +2,11 @@
 
 A simple elf file crypter written in golang !.
 
-# USAGE: 
-
-  ```
-    ./gocrypt -file=<filepath> -key=<key, default=1337>
-  ```
+```
+Usage of ./gocrypt:
+  
+  -file string
+    	file to encrypt
+  -key string
+    	key used to encrypt the file (default "1337")  
+```
