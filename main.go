@@ -6,16 +6,24 @@ import (
 	"debug/elf"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"syscall"
+	"unsafe"
 )
 
 var (
 	file = flag.String("file", "", "file to encrypt")
 	key  = flag.String("key", "1337", "key used to encrypt the file")
 )
+
+var stub = []byte{
+	0xbf, 0x01, 0x00, 0x00, 0x00, 0x48, 0x8d, 0x35, 0x18, 0x00, 0x00, 0x00,
+	0xba, 0x05, 0x00, 0x00, 0x00, 0xb8, 0x01, 0x00, 0x00, 0x00, 0x0f, 0x05,
+	0xbf, 0x00, 0x00, 0x00, 0x00, 0xb8, 0x3c, 0x00, 0x00, 0x00, 0x0f, 0x05,
+	0x48, 0x45, 0x4c, 0x4c, 0x4f, 0x20, 0x53, 0x4f, 0x59, 0x20, 0x42, 0x4f,
+	0x59,
+}
 
 func Rc4EncryptOrDecrypt(data []byte, key []byte) error {
 
@@ -28,6 +36,10 @@ func Rc4EncryptOrDecrypt(data []byte, key []byte) error {
 	cipher.XORKeyStream(data, data)
 
 	return nil
+}
+
+func Base[T any](v []T) unsafe.Pointer {
+	return unsafe.Pointer(&v[0])
 }
 
 func main() {
@@ -62,12 +74,36 @@ func main() {
 	ef, err := elf.NewFile(bytes.NewReader(data))
 
 	if err != nil {
-		if err == io.EOF {
-			fmt.Println("[!] not an elf file")
-			os.Exit(1)
-		}
+		fmt.Println(err)
+		os.Exit(1)
+	}
 
-		log.Fatal(err)
+	elfh := (*elf.Header64)(Base(data))
+
+	ccave := 0
+	ccaveSize := 0
+
+	for _, p := range ef.Progs {
+
+		if p.Type == elf.PT_LOAD {
+			if ccave != 0 {
+				ccaveSize = int(p.Off) - ccave
+				break
+			}
+
+			if (p.Flags & elf.PF_X) != 0 {
+				ccave = int(p.Off) + int(p.Filesz)
+			}
+		}
+	}
+
+	elfh.Entry = uint64(ccave)
+
+	if ccaveSize > len(stub) {
+		for i := 0; i < len(stub); i++ {
+			data[ccave+i] = stub[i]
+			fmt.Printf("0x%x, ", data[ccave+i])
+		}
 	}
 
 	for _, s := range ef.Sections {
